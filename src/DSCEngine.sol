@@ -12,6 +12,22 @@ pragma solidity ^0.8.18;
  */
 
 contract DSCEngine {
+    
+    // Errors
+
+    error DSCEngine__AmountMustBeGreaterThanZero();
+    
+    // Modifiers
+
+    modifier moreThanZero(uint256 amount) {
+        if (amount == 0) {
+            revert DSCEngine__AmountMustBeGreaterThanZero();
+        }
+        _;
+    }
+    
+    constructor() {}
+    
     function depositCollateralAndMintDSC() external {}
 
     function depositCollateral() external {}
