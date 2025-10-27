@@ -16,6 +16,10 @@ contract DSCEngine {
     // Errors
 
     error DSCEngine__AmountMustBeGreaterThanZero();
+
+    // State Variables
+
+    mapping(address token => address priceFeed) private s_priceFeeds;
     
     // Modifiers
 
