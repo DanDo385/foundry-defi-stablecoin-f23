@@ -3,6 +3,10 @@ pragma solidity ^0.8.18;
 
 import {AggregatorV3Interface} from "src/interfaces/AggregatorV3Interface.sol";
 
+/**
+ * @title MockV3Aggregator
+ * @notice This is a mock Chainlink price feed for testing purposes
+ */
 contract MockV3Aggregator is AggregatorV3Interface {
     uint8 public s_decimals;
     int256 public s_answer;
@@ -24,18 +28,16 @@ contract MockV3Aggregator is AggregatorV3Interface {
         return 1;
     }
 
-    function getRoundData(
-        uint80 /*_roundId*/
-    ) external view override returns (uint80, int256, uint256, uint256, uint80) {
-        return (1, s_answer, block.timestamp, block.timestamp, 1);
-    }
-
-    function latestRoundData()
+    function getRoundData(uint80 /*_roundId*/ )
         external
         view
         override
         returns (uint80, int256, uint256, uint256, uint80)
     {
+        return (1, s_answer, block.timestamp, block.timestamp, 1);
+    }
+
+    function latestRoundData() external view override returns (uint80, int256, uint256, uint256, uint80) {
         return (1, s_answer, block.timestamp, block.timestamp, 1);
     }
 
