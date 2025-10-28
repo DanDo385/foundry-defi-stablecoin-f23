@@ -24,10 +24,10 @@ contract DecentralizedStableCoin is ERC20Burnable, Ownable {
      * @dev Only the owner (DSCEngine) can burn tokens
      */
     function burn(uint256 _amount) public override onlyOwner {
-        uint256 balance = balanceOf(msg.sender);
         if (_amount == 0) {
             revert DecentralizedStableCoin__AmountMustBeGreaterThanZero();
         }
+        uint256 balance = balanceOf(msg.sender);
         if (balance < _amount) {
             revert DecentralizedStableCoin__BurnAmountExceedsBalance();
         }

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.18;
 
 import {Test} from "forge-std/Test.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {DecentralizedStableCoin} from "src/DecentralizedStableCoin.sol";
 
 /**
@@ -39,7 +40,7 @@ contract DecentralizedStableCoinTest is Test {
 
     function testMintRevertsIfNotOwner() public {
         vm.prank(user);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, user));
         dsc.mint(user, 100 ether);
     }
 
@@ -75,7 +76,7 @@ contract DecentralizedStableCoinTest is Test {
     function testBurnRevertsIfNotOwner() public {
         dsc.mint(owner, 100 ether);
         vm.prank(user);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, user));
         dsc.burn(50 ether);
     }
 

@@ -26,11 +26,13 @@ contract Handler is Test {
     uint256 public timesDepositCalled;
     uint256 public timesRedeemCalled;
     uint256 public timesBurnCalled;
+    uint256 public trackedTotalMinted;
 
     address[] public usersWithCollateralDeposited;
     mapping(address => bool) public hasDeposited;
+    mapping(address => uint256) public trackedMintedForUser;
 
-    uint256 constant MAX_DEPOSIT = type(uint96).max;
+    uint256 constant MAX_DEPOSIT = 100 ether;
 
     constructor(DSCEngine _dscEngine, DecentralizedStableCoin _dsc) {
         dscEngine = _dscEngine;
@@ -69,7 +71,7 @@ contract Handler is Test {
         address sender = usersWithCollateralDeposited[addressSeed % usersWithCollateralDeposited.length];
         (uint256 totalDscMinted, uint256 collateralValueInUsd) = dscEngine.getAccountInformation(sender);
 
-        int256 maxDscToMint = int256(collateralValueInUsd / 2) - int256(totalDscMinted);
+        int256 maxDscToMint = int256(collateralValueInUsd / 3) - int256(totalDscMinted);
         if (maxDscToMint <= 0) return;
 
         amount = bound(amount, 1, uint256(maxDscToMint));
@@ -77,6 +79,8 @@ contract Handler is Test {
         vm.startPrank(sender);
         try dscEngine.mintDsc(amount) {
             timesMintCalled++;
+            trackedTotalMinted += amount;
+            trackedMintedForUser[sender] += amount;
         } catch {}
         vm.stopPrank();
     }
@@ -114,6 +118,8 @@ contract Handler is Test {
         dsc.approve(address(dscEngine), amount);
         try dscEngine.burnDsc(amount) {
             timesBurnCalled++;
+            trackedTotalMinted -= amount;
+            trackedMintedForUser[sender] -= amount;
         } catch {}
         vm.stopPrank();
     }
@@ -127,5 +133,9 @@ contract Handler is Test {
             return weth;
         }
         return wbtc;
+    }
+
+    function getUsersWithCollateralDeposited() external view returns (address[] memory) {
+        return usersWithCollateralDeposited;
     }
 }

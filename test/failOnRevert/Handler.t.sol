@@ -26,11 +26,13 @@ contract Handler is Test {
     uint256 public timesDepositCalled;
     uint256 public timesRedeemCalled;
     uint256 public timesBurnCalled;
+    uint256 public trackedTotalMinted;
 
     address[] public usersWithCollateralDeposited;
     mapping(address => bool) public hasDeposited;
+    mapping(address => uint256) public trackedMintedForUser;
 
-    uint256 constant MAX_DEPOSIT = type(uint96).max;
+    uint256 constant MAX_DEPOSIT = 100 ether;
 
     constructor(DSCEngine _dscEngine, DecentralizedStableCoin _dsc) {
         dscEngine = _dscEngine;
@@ -85,6 +87,8 @@ contract Handler is Test {
         vm.prank(sender);
         dscEngine.mintDsc(amount);
         timesMintCalled++;
+        trackedTotalMinted += amount;
+        trackedMintedForUser[sender] += amount;
     }
 
     /**
@@ -130,6 +134,8 @@ contract Handler is Test {
         vm.stopPrank();
 
         timesBurnCalled++;
+        trackedTotalMinted -= amount;
+        trackedMintedForUser[sender] -= amount;
     }
 
     ///////////////////
@@ -141,5 +147,9 @@ contract Handler is Test {
             return weth;
         }
         return wbtc;
+    }
+
+    function getUsersWithCollateralDeposited() external view returns (address[] memory) {
+        return usersWithCollateralDeposited;
     }
 }

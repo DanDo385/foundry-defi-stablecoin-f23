@@ -8,6 +8,7 @@ import {DecentralizedStableCoin} from "src/DecentralizedStableCoin.sol";
 import {HelperConfig} from "script/HelperConfig.s.sol";
 import {MockV3Aggregator} from "test/unit/mocks/MockV3Aggregator.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 contract DSCEngineTest is Test {
     DSCEngine private dsce;
@@ -83,7 +84,7 @@ contract DSCEngineTest is Test {
 
     function testMintFailsIfNotOwner() public {
         vm.prank(user);
-        vm.expectRevert("Ownable: caller is not the owner");
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, user));
         dsc.mint(user, 1 ether);
     }
 
@@ -93,7 +94,7 @@ contract DSCEngineTest is Test {
         vm.stopPrank();
 
         vm.prank(user);
-        vm.expectRevert("Ownable: caller is not the owner");
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, user));
         dsc.burn(100 ether);
     }
 
@@ -117,7 +118,9 @@ contract DSCEngineTest is Test {
 
         vm.startPrank(user);
         mockToken.approve(address(dsce), AMOUNT_COLLATERAL);
-        vm.expectRevert(DSCEngine.DSCEngine__TokenNotAllowed.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(DSCEngine.DSCEngine__TokenNotAllowed.selector, address(mockToken))
+        );
         dsce.depositCollateral(address(mockToken), AMOUNT_COLLATERAL);
         vm.stopPrank();
     }
@@ -149,10 +152,16 @@ contract DSCEngineTest is Test {
         ERC20Mock(weth).approve(address(dsce), AMOUNT_COLLATERAL);
         dsce.depositCollateral(weth, AMOUNT_COLLATERAL);
 
-        uint256 wethPrice = uint256(helperConfig.getEthUsdPrice());
-        uint256 amountToMint = (AMOUNT_COLLATERAL * wethPrice) / 1 ether; // Minting equivalent to collateral value
+        uint256 collateralValueInUsd = dsce.getUsdValue(weth, AMOUNT_COLLATERAL);
+        uint256 liquidationThreshold = dsce.getLiquidationThreshold();
+        uint256 collateralAdjustedForThreshold = (collateralValueInUsd * liquidationThreshold) / 100;
+        uint256 amountToMint = collateralAdjustedForThreshold + 1;
+        uint256 precision = dsce.getPrecision();
+        uint256 expectedHealthFactor = (collateralAdjustedForThreshold * precision) / amountToMint;
 
-        vm.expectRevert(DSCEngine.DSCEngine__BreaksHealthFactor.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(DSCEngine.DSCEngine__BreaksHealthFactor.selector, expectedHealthFactor)
+        );
         dsce.mintDsc(amountToMint);
         vm.stopPrank();
     }
@@ -222,7 +231,7 @@ contract DSCEngineTest is Test {
         ERC20Mock(weth).approve(address(dsce), AMOUNT_COLLATERAL);
         dsce.depositCollateralAndMintDSC(weth, AMOUNT_COLLATERAL, AMOUNT_TO_MINT);
 
-        vm.expectRevert(DSCEngine.DSCEngine__BreaksHealthFactor.selector);
+        vm.expectRevert(abi.encodeWithSelector(DSCEngine.DSCEngine__BreaksHealthFactor.selector, 0));
         dsce.redeemCollateral(weth, AMOUNT_COLLATERAL);
         vm.stopPrank();
     }
@@ -312,12 +321,28 @@ contract DSCEngineTest is Test {
 
     function testLiquidation() public {
         // Setup: User deposits collateral and mints DSC, then price of collateral drops
+        uint256 liquidationThreshold = dsce.getLiquidationThreshold();
+        uint256 collateralValueBeforeDrop = dsce.getUsdValue(weth, AMOUNT_COLLATERAL);
+        uint256 collateralAdjustedBeforeDrop = (collateralValueBeforeDrop * liquidationThreshold) / 100;
+        int256 originalEthPrice = helperConfig.getEthUsdPrice();
+        int256 newEthPrice = 1000e8; // Drastic price drop
+
+        // Compute post-drop collateral metrics while preserving the original price for minting
+        MockV3Aggregator(ethUsdPriceFeed).updateAnswer(newEthPrice);
+        uint256 collateralValueAfterDrop = dsce.getUsdValue(weth, AMOUNT_COLLATERAL);
+        uint256 collateralAdjustedAfterDrop = (collateralValueAfterDrop * liquidationThreshold) / 100;
+        MockV3Aggregator(ethUsdPriceFeed).updateAnswer(originalEthPrice);
+
+        uint256 amountToMint = (collateralAdjustedAfterDrop * 105) / 100;
+        if (amountToMint >= collateralAdjustedBeforeDrop) {
+            amountToMint = collateralAdjustedBeforeDrop - 1;
+        }
+
         vm.startPrank(user);
         ERC20Mock(weth).approve(address(dsce), AMOUNT_COLLATERAL);
-        dsce.depositCollateralAndMintDSC(weth, AMOUNT_COLLATERAL, AMOUNT_TO_MINT);
+        dsce.depositCollateralAndMintDSC(weth, AMOUNT_COLLATERAL, amountToMint);
         vm.stopPrank();
 
-        int256 newEthPrice = 1000e8; // Drastic price drop
         MockV3Aggregator(ethUsdPriceFeed).updateAnswer(newEthPrice);
 
         // Now user health factor should be low
@@ -326,7 +351,7 @@ contract DSCEngineTest is Test {
 
         // Liquidator setup
         address liquidator = makeAddr("liquidator");
-        uint256 debtToCover = AMOUNT_TO_MINT / 2;
+        uint256 debtToCover = amountToMint / 4;
         vm.startPrank(address(dsce));
         dsc.mint(liquidator, debtToCover);
         vm.stopPrank();

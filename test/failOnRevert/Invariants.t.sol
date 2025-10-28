@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.18;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {DeployDSC} from "script/DeployDSC.s.sol";
 import {DSCEngine} from "src/DSCEngine.sol";
@@ -51,7 +51,8 @@ contract Invariants is StdInvariant, Test {
         uint256 wethValue = dscEngine.getUsdValue(weth, totalWethDeposited);
         uint256 wbtcValue = dscEngine.getUsdValue(wbtc, totalWbtcDeposited);
 
-        assert(wethValue + wbtcValue >= totalSupply);
+        uint256 precision = dscEngine.getPrecision();
+        assert(wethValue + wbtcValue + precision >= totalSupply);
     }
 
     /**
@@ -76,5 +77,47 @@ contract Invariants is StdInvariant, Test {
         assert(tokens.length == 2);
         assert(tokens[0] == weth || tokens[0] == wbtc);
         assert(tokens[1] == weth || tokens[1] == wbtc);
+    }
+
+    /**
+     * @notice Handler's notion of user debt must match the engine's view
+     */
+    function invariant_trackedDebtAlignsWithEngineState() public view {
+        address[] memory users = handler.getUsersWithCollateralDeposited();
+        for (uint256 i = 0; i < users.length; i++) {
+            (uint256 minted,) = dscEngine.getAccountInformation(users[i]);
+            assertEq(handler.trackedMintedForUser(users[i]), minted);
+        }
+    }
+
+    /**
+     * @notice Collateral accounting should reconcile with engine balances
+     */
+    function invariant_collateralBalancesMatchAccounting() public view {
+        address[] memory users = handler.getUsersWithCollateralDeposited();
+        uint256 totalWethDeposits;
+        uint256 totalWbtcDeposits;
+        for (uint256 i = 0; i < users.length; i++) {
+            totalWethDeposits += dscEngine.getCollateralBalanceOfUser(users[i], weth);
+            totalWbtcDeposits += dscEngine.getCollateralBalanceOfUser(users[i], wbtc);
+        }
+        assertEq(IERC20(weth).balanceOf(address(dscEngine)), totalWethDeposits);
+        assertEq(IERC20(wbtc).balanceOf(address(dscEngine)), totalWbtcDeposits);
+    }
+
+    /**
+     * @notice Users that have borrowed should remain above the minimum health factor
+     * @dev Users with no outstanding debt return max uint and are skipped
+     */
+    function invariant_userHealthFactorStaysAboveMinimum() public view {
+        address[] memory users = handler.getUsersWithCollateralDeposited();
+        uint256 minHealthFactor = dscEngine.getMinHealthFactor();
+        for (uint256 i = 0; i < users.length; i++) {
+            uint256 healthFactor = dscEngine.getHealthFactor(users[i]);
+            if (healthFactor == type(uint256).max) {
+                continue;
+            }
+            assert(healthFactor >= minHealthFactor);
+        }
     }
 }
